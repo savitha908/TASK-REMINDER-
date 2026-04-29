@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Smart Task Dashboard</title>
+
+<style>
+body {
+    font-family: Arial;
+    margin: 0;
+    text-align: center;
+    background-size: cover;
+    background-position: center;
+}
+
+/* Header */
+header {
+    background: rgba(0,0,0,0.7);
+    color: white;
+    padding: 15px;
+}
+
+/* Layout */
+.container {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 20px;
+    padding: 20px;
+}
+
+.card {
+    width: 250px;
+    background: rgba(255,255,255,0.9);
+    padding: 15px;
+    border-radius: 12px;
+}
+
+/* Profile Image */
+#profilePreview {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid #007bff;
+}
+
+/* Buttons */
+button, input[type="file"]::file-selector-button {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #0056b3;
+}
+
+.delete {
+    background: red;
+}
+
+/* Task list */
+#taskList {
+    width: 400px;
+    margin: 20px auto;
+}
+
+.task-item {
+    background: white;
+    margin: 10px;
+    padding: 10px;
+    border-radius: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.active-task {
+    background: #ffcccc;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>Smart Task Dashboard</h1>
+    <button onclick="stopAlarm()">🔕 Stop Alarm</button>
+</header>
+
+<div class="container">
+
+<div class="card">
+<h3>Profile Image</h3>
+<input type="file" id="profileInput"><br><br>
+<img id="profilePreview">
+</div>
+
+<div class="card">
+<h3>Background</h3>
+<input type="file" id="bgInput">
+</div>
+
+<div class="card">
+<h3>Alarm Sound</h3>
+<input type="file" id="soundInput" accept="audio/*">
+</div>
+
+<div class="card">
+<input type="text" id="taskInput" placeholder="Enter task"><br><br>
+<input type="time" id="timeInput"><br><br>
+<button onclick="addTask()">Add Task</button>
+</div>
+
+</div>
+
+<div id="taskList"></div>
+
+<script>
+
+// ===== AUDIO =====
+let alarmSound = new Audio();
+alarmSound.loop = true;
+
+// load sound
+let savedSound = localStorage.getItem("alarmSound");
+alarmSound.src = savedSound || "https://www.soundjay.com/buttons/beep-07.wav";
+
+// unlock audio once
+document.body.addEventListener("click", () => {
+    alarmSound.play().then(() => {
+        alarmSound.pause();
+        alarmSound.currentTime = 0;
+    }).catch(()=>{});
+}, { once: true });
+
+// upload sound
+document.getElementById("soundInput").addEventListener("change", function () {
+    let reader = new FileReader();
+    reader.onload = e => {
+        localStorage.setItem("alarmSound", e.target.result);
+        alarmSound.src = e.target.result;
+        alert("Alarm sound set!");
+    };
+    reader.readAsDataURL(this.files[0]);
+});
+
+// ===== TASK DATA =====
+let tasks = JSON.parse(localStorage.getItem("tasks")) || [];
+
+// ===== ALARM =====
+let reminderInterval;
+
+function startAlarm(taskName, index) {
+
+    alarmSound.currentTime = 0;
+    alarmSound.play();
+
+    // highlight
+    document.querySelectorAll(".task-item")[index].classList.add("active-task");
+
+    alert("⏰ Hurry up! Time reached for: " + taskName);
+
+    // repeat alert
+    clearInterval(reminderInterval);
+    reminderInterval = setInterval(() => {
+        alert("⏰ Hurry up! Do your task: " + taskName);
+    }, 15000);
+}
+
+function stopAlarm() {
+    alarmSound.pause();
+    alarmSound.currentTime = 0;
+
+    clearInterval(reminderInterval);
+
+    document.querySelectorAll(".task-item").forEach(t => {
+        t.classList.remove("active-task");
+    });
+}
+
+// ===== TASK FUNCTIONS =====
+function displayTasks() {
+    let list = document.getElementById("taskList");
+    list.innerHTML = "";
+
+    tasks.forEach((t, i) => {
+
+        let div = document.createElement("div");
+        div.className = "task-item";
+
+        let text = document.createElement("span");
+        text.innerText = t.name + " - " + t.time;
+
+        // 🔔 remind button
+        let remindBtn = document.createElement("button");
+        remindBtn.innerText = "🔔 Remind";
+        remindBtn.onclick = () => startAlarm(t.name, i);
+
+        // delete
+        let delBtn = document.createElement("button");
+        delBtn.innerText = "X";
+        delBtn.className = "delete";
+        delBtn.onclick = () => {
+            tasks.splice(i, 1);
+            saveTasks();
+        };
+
+        div.appendChild(text);
+        div.appendChild(remindBtn);
+        div.appendChild(delBtn);
+
+        list.appendChild(div);
+    });
+}
+
+function saveTasks() {
+    localStorage.setItem("tasks", JSON.stringify(tasks));
+    displayTasks();
+}
+
+function addTask() {
+    let name = document.getElementById("taskInput").value;
+    let time = document.getElementById("timeInput").value;
+
+    if (!name || !time) {
+        alert("Enter task & time");
+        return;
+    }
+
+    tasks.push({
+        name,
+        time,
+        alerted: false
+    });
+
+    saveTasks();
+
+    document.getElementById("taskInput").value = "";
+    document.getElementById("timeInput").value = "";
+}
+
+// ===== SMART REMINDER ENGINE =====
+setInterval(() => {
+
+    let now = new Date();
+
+    tasks.forEach((t, index) => {
+
+        if (!t.alerted) {
+
+            let [h, m] = t.time.split(":");
+
+            let taskMinutes = parseInt(h)*60 + parseInt(m);
+            let nowMinutes = now.getHours()*60 + now.getMinutes();
+
+            // 1 minute window (prevents miss)
+            if (nowMinutes >= taskMinutes && nowMinutes <= taskMinutes + 1) {
+                startAlarm(t.name, index);
+                t.alerted = true;
+                saveTasks();
+            }
+        }
+
+    });
+
+}, 3000);
+
+// ===== PROFILE =====
+document.getElementById("profileInput").addEventListener("change", function () {
+    let reader = new FileReader();
+    reader.onload = e => {
+        localStorage.setItem("profileImage", e.target.result);
+        document.getElementById("profilePreview").src = e.target.result;
+    };
+    reader.readAsDataURL(this.files[0]);
+});
+
+let profile = localStorage.getItem("profileImage");
+if (profile) document.getElementById("profilePreview").src = profile;
+
+// ===== BACKGROUND =====
+document.getElementById("bgInput").addEventListener("change", function () {
+    let reader = new FileReader();
+    reader.onload = e => {
+        localStorage.setItem("bgImage", e.target.result);
+        document.body.style.backgroundImage = `url(${e.target.result})`;
+    };
+    reader.readAsDataURL(this.files[0]);
+});
+
+let bg = localStorage.getItem("bgImage");
+if (bg) document.body.style.backgroundImage = `url(${bg})`;
+
+// INIT
+displayTasks();
+
+</script>
+
+</body>
+</html>
